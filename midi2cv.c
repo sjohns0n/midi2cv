@@ -10,9 +10,11 @@
 #define F_CPU 16000000
 
 #define GATE_PORT PORTD
-#define GATE_PIN PIND1
+#define GATE_DDR DDRD
+#define GATE_PIN PIND2
 
 #define TRIGGER_PORT PORTD
+#define TRIGGER_DDR DDRD
 #define TRIGGER_PIN PIND2
 
 #define DAC_ADDR 0b00011110
@@ -56,9 +58,11 @@ int main(void) {
 	enum status currentStatus = NONE;
 	
 	uartInit();
+	gateInit();
+	triggerInit();
 	triggerTimerInit();
 	i2c_init();
-	
+
 	while(1) {
 		b = receivedByte;
 		// decode received byte
@@ -100,6 +104,7 @@ int main(void) {
 			switch(currentStatus) {
 				case NOTEOFF:
 				if(firstDataByte == TRUE) {
+					gateOff();
 					currentNote = b;
 					firstDataByte = FALSE;
 				} else {
@@ -135,6 +140,15 @@ int main(void) {
 	}
 }
 
+void gateInit(void) {
+	GATE_DDR |= _BV(GATE_PIN);
+	gateOff();
+}
+
+void triggerInit(void) {
+	TRIGGER_DDR |= _BV(TRIGGER_PIN);
+}
+
 void gateOn(void) {
 	GATE_PORT |= _BV(GATE_PIN);
 }
@@ -152,28 +166,31 @@ void triggerTimerInit(void) {
 }
 
 void triggerOn() {
-	// turn trigger pin on for timeOn milliseconds
 	// start timer
 	TCCR0B |= _BV(CS02) | _BV(CS00); // 1024 prescaler
 	TRIGGER_PORT |= _BV(TRIGGER_PIN); // turn on trigger
 }
 
-/* Trigger On timer interrupt */
+/* 'Trigger On' timer interrupt */
 ISR(TIMER0_COMPA_vect) {
 	TCCR0B &= ~(_BV(CS02) | _BV(CS01) | _BV(CS00)); // disable timer
+	TCNT0 = 0; // reset counter
 	TRIGGER_PORT &= ~_BV(TRIGGER_PIN); // turn of trigger
 }
 
 /* USART Data Receive Interrupt */
 ISR(USART_RX_vect) {
 	receivedByte = UDR0;
+	ledOn();
 }
+
+
 
 /* USART Initialisation */
 void uartInit(void) {
-	UCSR0B |= _BV(RXEN0) | (RXCIE0); // enable receiver and interrupt
+	UCSR0B |= _BV(RXEN0) | _BV(RXCIE0); // enable receiver and interrupt
 	UCSR0C |= _BV(UCSZ01) | _BV(UCSZ00); // 8 bit character size
-	uint32_t baud = F_CPU / (16*BAUD_RATE) - 1;
+	uint16_t baud = (uint16_t)(F_CPU / (16U*BAUD_RATE) - 1);
 	UBRR0H = baud & 0xFF00;
 	UBRR0L = baud;
 	return;
