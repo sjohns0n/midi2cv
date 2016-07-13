@@ -12,7 +12,10 @@
 void uartInit(void);
 void gateOn(void);
 void gateOff(void);
-void triggerOn(uint16_t timeOn);
+void triggerOn();
+void triggerTimerInit(void);
+
+void outputNote(uint16_t note);
 
 
 
