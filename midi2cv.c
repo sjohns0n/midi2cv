@@ -7,15 +7,19 @@
 
 #include <inttypes.h>
 
-#define F_CPU 20000000
+#define F_CPU 16000000
 
 #define GATE_PORT PORTD
 #define GATE_PIN PIND1
+
+#define ADC_ADDR 0b00011110
 
 #define BAUD_RATE 31250
 #define TRIGGER_TIME 10
 
 #include "midi2cv.h"
+#include "i2cmaster.h"
+#include <util/delay.h>
 #include <avr/io.h>
 
 volatile uint8_t receivedByte;
@@ -42,6 +46,8 @@ int main(void) {
 	uint8_t channel;
 	uint8_t adcOutput = 0;
 	
+	uint16_t testAdc = 0;
+	
 	uint8_t currentNote = 0;
 	uint8_t currentVelocity = 0;
 	
@@ -49,8 +55,19 @@ int main(void) {
 	enum status currentStatus;
 	
 	uartInit();
+	i2c_init();
 	
 	while(1) {
+		i2c_start_wait(ADC_ADDR + I2C_WRITE);
+		i2c_write((uint8_t)((testAdc & 0x0F00) >> 8));
+		i2c_write(testAdc & 0xFF);
+		//i2c_stop();
+		
+		testAdc += 100;
+		
+		_delay_ms(250);
+		continue;
+		
 		b = receivedByte;
 		// decode received byte
 		// Status or Data byte
@@ -139,14 +156,14 @@ void triggerOn(uint16_t timeOn) {
 
 /* USART Data Receive Interrupt */
 ISR(USART_RX_vect) {
-	receivedByte = UDR;
+	receivedByte = UDR0;
 }
 
 /* USART Initialisation */
 void uartInit(void) {
-	UCSRB |= _BV(RXEN) | (RXCIE); // enable receiver and interrupt
-	UCSRC |= _BV(UCSZ1) | _BV(UCSZ0); // 8 bit character size
+	UCSR0B |= _BV(RXEN0) | (RXCIE0); // enable receiver and interrupt
+	UCSR0C |= _BV(UCSZ01) | _BV(UCSZ00); // 8 bit character size
 	uint32_t baud = F_CPU / (16*BAUD_RATE) - 1;
-	UBRRH = baud & 0xFF00;
-	UBRRL = baud;
+	UBRR0H = baud & 0xFF00;
+	UBRR0L = baud;
 }
