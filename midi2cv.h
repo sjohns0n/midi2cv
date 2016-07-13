@@ -10,6 +10,9 @@
 #define MIDI2CV_H_
 
 void uartInit(void);
+void gateOn(void);
+void gateOff(void);
+void triggerOn(uint16_t timeOn);
 
 
 
