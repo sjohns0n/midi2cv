@@ -7,7 +7,7 @@
 
 #include <inttypes.h>
 
-#define F_CPU 20000000
+#define F_CPU 16000000U
 
 #define GATE_PORT PORTD
 #define GATE_PIN PIND1
@@ -17,7 +17,8 @@
 
 #include "midi2cv.h"
 #include <avr/io.h>
-
+#include <util/delay.h>
+#include <avr/interrupt.h>
 volatile uint8_t receivedByte;
 
 enum status {
@@ -37,6 +38,13 @@ enum boolean {
 	FALSE
 };
 
+void ledOn(void) {
+	PORTD |= _BV(PIND2);
+	_delay_ms(250);
+	PORTD &= ~_BV(PIND2);
+	_delay_ms(250);
+}
+
 int main(void) {
 	uint8_t b;
 	uint8_t channel;
@@ -48,13 +56,18 @@ int main(void) {
 	enum boolean firstDataByte = TRUE;
 	enum status currentStatus;
 	
+	DDRD |= _BV(PIND2);
+	
 	uartInit();
+	sei();
+	ledOn();
 	
 	while(1) {
 		b = receivedByte;
 		// decode received byte
 		// Status or Data byte
-		if(b & 0x80) { // Status
+		if(b & 0b10000000) { // Status
+			ledOn();
 			channel = b & 0x0F;
 			
 			switch(b & 0xF0) {
@@ -139,7 +152,11 @@ void triggerOn(uint16_t timeOn) {
 
 /* USART Data Receive Interrupt */
 ISR(USART_RX_vect) {
-	receivedByte = UDR0;
+	//receivedByte = UDR0;
+	PORTD |= _BV(PIND2);
+	_delay_ms(250);
+	PORTD &= ~_BV(PIND2);
+	_delay_ms(250);
 }
 
 /* USART Initialisation */
@@ -147,6 +164,7 @@ void uartInit(void) {
 	UCSR0B |= _BV(RXEN0) | _BV(RXCIE0); // enable receiver and interrupt
 	UCSR0C |= _BV(UCSZ01) | _BV(UCSZ00); // 8 bit character size
 	uint32_t baud = F_CPU / (16U*BAUD_RATE) - 1;
-	UBRR0H = baud & 0xFF00;
-	UBRR0L = baud;
+	baud = 31;
+	UBRR0H = (uint8_t)(baud & 0xFF00);
+	UBRR0L = (uint8_t)baud;
 }
