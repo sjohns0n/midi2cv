@@ -10,15 +10,24 @@
 #define F_CPU 16000000U
 
 #define GATE_PORT PORTD
-#define GATE_PIN PIND1
+#define GATE_DDR DDRD
+#define GATE_PIN PIND2
+
+#define TRIGGER_PORT PORTD
+#define TRIGGER_DDR DDRD
+#define TRIGGER_PIN PIND2
+
+#define DAC_ADDR 0b00011110
 
 #define BAUD_RATE 31250
 #define TRIGGER_TIME 10
 
 #include "midi2cv.h"
-#include <avr/io.h>
+#include "i2cmaster.h"
 #include <util/delay.h>
+#include <avr/io.h>
 #include <avr/interrupt.h>
+
 volatile uint8_t receivedByte;
 
 enum status {
@@ -48,13 +57,12 @@ void ledOn(void) {
 int main(void) {
 	uint8_t b;
 	uint8_t channel;
-	uint8_t adcOutput = 0;
 	
 	uint8_t currentNote = 0;
 	uint8_t currentVelocity = 0;
 	
 	enum boolean firstDataByte = TRUE;
-	enum status currentStatus;
+	enum status currentStatus = NONE;
 	
 	DDRD |= _BV(PIND2);
 	
@@ -62,6 +70,11 @@ int main(void) {
 	sei();
 	ledOn();
 	
+	gateInit();
+	triggerInit();
+	triggerTimerInit();
+	i2c_init();
+
 	while(1) {
 		b = receivedByte;
 		// decode received byte
@@ -104,6 +117,7 @@ int main(void) {
 			switch(currentStatus) {
 				case NOTEOFF:
 				if(firstDataByte == TRUE) {
+					gateOff();
 					currentNote = b;
 					firstDataByte = FALSE;
 				} else {
@@ -116,15 +130,16 @@ int main(void) {
 					currentNote = b;
 					firstDataByte = FALSE;
 				} else {
-					if(b == 0x00) {
+					currentVelocity = b;
+					if(currentVelocity == 0x00) { // Note Off
 						gateOff();
 					} else {
-						currentVelocity = b;
-						triggerOn(TRIGGER_TIME);
+						triggerOn();
 						gateOn();
 					}
 					firstDataByte = TRUE;
 				}
+				outputNote(currentNote);
 				break;
 				
 				default:
@@ -138,6 +153,15 @@ int main(void) {
 	}
 }
 
+void gateInit(void) {
+	GATE_DDR |= _BV(GATE_PIN);
+	gateOff();
+}
+
+void triggerInit(void) {
+	TRIGGER_DDR |= _BV(TRIGGER_PIN);
+}
+
 void gateOn(void) {
 	GATE_PORT |= _BV(GATE_PIN);
 }
@@ -146,25 +170,49 @@ void gateOff(void) {
 	GATE_PORT &= ~_BV(GATE_PIN);
 }
 
-void triggerOn(uint16_t timeOn) {
-	// turn trigger pin on for timeOn milliseconds
+void triggerTimerInit(void) {
+	uint8_t timerValue = (uint8_t)(TRIGGER_TIME * F_CPU / 1024);
+	OCR0A = timerValue;
+	
+	TCCR0B &= ~(_BV(CS02) | _BV(CS01) | _BV(CS00)); // disable timer
+	TIMSK0 |= _BV(OCIE0A); // enable interrupt
+}
+
+void triggerOn() {
+	// start timer
+	TCCR0B |= _BV(CS02) | _BV(CS00); // 1024 prescaler
+	TRIGGER_PORT |= _BV(TRIGGER_PIN); // turn on trigger
+}
+
+/* 'Trigger On' timer interrupt */
+ISR(TIMER0_COMPA_vect) {
+	TCCR0B &= ~(_BV(CS02) | _BV(CS01) | _BV(CS00)); // disable timer
+	TCNT0 = 0; // reset counter
+	TRIGGER_PORT &= ~_BV(TRIGGER_PIN); // turn of trigger
 }
 
 /* USART Data Receive Interrupt */
 ISR(USART_RX_vect) {
-	//receivedByte = UDR0;
-	PORTD |= _BV(PIND2);
-	_delay_ms(250);
-	PORTD &= ~_BV(PIND2);
-	_delay_ms(250);
+	receivedByte = UDR0;
 }
 
 /* USART Initialisation */
 void uartInit(void) {
 	UCSR0B |= _BV(RXEN0) | _BV(RXCIE0); // enable receiver and interrupt
 	UCSR0C |= _BV(UCSZ01) | _BV(UCSZ00); // 8 bit character size
-	uint32_t baud = F_CPU / (16U*BAUD_RATE) - 1;
-	baud = 31;
+	//uint32_t baud = F_CPU / (16U*BAUD_RATE) - 1;
+	uint8_t baud = 31;
 	UBRR0H = (uint8_t)(baud & 0xFF00);
 	UBRR0L = (uint8_t)baud;
+	return;
+}
+
+/* Send the current note value to the ADC */
+void outputNote(uint16_t note) {
+	note = note * 32; // DAC has 4096 steps for 128 notes
+	i2c_start_wait(DAC_ADDR + I2C_WRITE);
+	i2c_write((uint8_t)((note & 0x0F00) >> 8));
+	i2c_write(note & 0xFF);
+	i2c_stop();
+	return;
 }
