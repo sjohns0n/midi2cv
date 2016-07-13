@@ -139,14 +139,14 @@ void triggerOn(uint16_t timeOn) {
 
 /* USART Data Receive Interrupt */
 ISR(USART_RX_vect) {
-	receivedByte = UDR;
+	receivedByte = UDR0;
 }
 
 /* USART Initialisation */
 void uartInit(void) {
-	UCSRB |= _BV(RXEN) | (RXCIE); // enable receiver and interrupt
-	UCSRC |= _BV(UCSZ1) | _BV(UCSZ0); // 8 bit character size
-	uint32_t baud = F_CPU / (16*BAUD_RATE) - 1;
-	UBRRH = baud & 0xFF00;
-	UBRRL = baud;
+	UCSR0B |= _BV(RXEN0) | _BV(RXCIE0); // enable receiver and interrupt
+	UCSR0C |= _BV(UCSZ01) | _BV(UCSZ00); // 8 bit character size
+	uint32_t baud = F_CPU / (16U*BAUD_RATE) - 1;
+	UBRR0H = baud & 0xFF00;
+	UBRR0L = baud;
 }
