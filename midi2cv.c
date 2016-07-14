@@ -9,6 +9,8 @@
 
 #define F_CPU 16000000U
 
+#define RECEIVE_BUFFER_SIZE 16
+
 #define GATE_PORT PORTD
 #define GATE_DDR DDRD
 #define GATE_PIN PIND2
@@ -29,6 +31,10 @@
 #include <avr/interrupt.h>
 
 volatile uint8_t receivedByte;
+volatile uint8_t receivedBuffer[RECEIVE_BUFFER_SIZE];
+volatile uint8_t writePointer = 0;
+volatile uint8_t readPointer = 0;
+volatile uint8_t bufferItemCount = 0;
 
 enum status {
 	NONE,
@@ -47,16 +53,23 @@ enum boolean {
 	FALSE
 };
 
-void ledOn(void) {
-	PORTD |= _BV(PIND2);
-	_delay_ms(250);
-	PORTD &= ~_BV(PIND2);
-	_delay_ms(250);
+void ledBlink(uint8_t pin) {
+	if(pin == 1) {
+		PORTD |= _BV(PIND2);
+		_delay_ms(250);
+		PORTD &= ~_BV(PIND2);
+		_delay_ms(250);
+		} else {
+		PORTD |= _BV(PIND3);
+		_delay_ms(250);
+		PORTD &= ~_BV(PIND3);
+		_delay_ms(250);
+	}
 }
 
 int main(void) {
 	uint8_t b;
-	uint8_t channel;
+	//uint8_t channel;
 	
 	uint8_t currentNote = 0;
 	uint8_t currentVelocity = 0;
@@ -65,10 +78,12 @@ int main(void) {
 	enum status currentStatus = NONE;
 	
 	DDRD |= _BV(PIND2);
+	PORTD &= ~_BV(PIND2);
 	
 	uartInit();
 	sei();
-	ledOn();
+	ledBlink(1);
+	ledBlink(2);
 	
 	gateInit();
 	triggerInit();
@@ -76,12 +91,27 @@ int main(void) {
 	i2c_init();
 
 	while(1) {
-		b = receivedByte;
+		while(bufferItemCount == 0) {
+			// wait for another byte to be received
+		}
+		
+		b = receivedBuffer[readPointer];
+		readPointer++;
+		if(readPointer > (RECEIVE_BUFFER_SIZE - 1))		 {
+			readPointer = 0;
+		}
+		
+		if(bufferItemCount <= 0) {
+			bufferItemCount = 0;	
+		} else {
+			bufferItemCount--;
+		}
+		
 		// decode received byte
 		// Status or Data byte
 		if(b & 0b10000000) { // Status
-			ledOn();
-			channel = b & 0x0F;
+			ledBlink(1);
+			//channel = b & 0x0F;
 			
 			switch(b & 0xF0) {
 				case 0x80: // Note Off
@@ -113,11 +143,12 @@ int main(void) {
 			
 		} else
 		if((b & 0x80) == 0) { // Data
+			ledBlink(2);
 			// do something with the data, determined by what the current status is
 			switch(currentStatus) {
 				case NOTEOFF:
 				if(firstDataByte == TRUE) {
-					gateOff();
+					//gateOff();
 					currentNote = b;
 					firstDataByte = FALSE;
 				} else {
@@ -132,10 +163,10 @@ int main(void) {
 				} else {
 					currentVelocity = b;
 					if(currentVelocity == 0x00) { // Note Off
-						gateOff();
+						//gateOff();
 					} else {
-						triggerOn();
-						gateOn();
+						//triggerOn();
+						//gateOn();
 					}
 					firstDataByte = TRUE;
 				}
@@ -194,6 +225,17 @@ ISR(TIMER0_COMPA_vect) {
 /* USART Data Receive Interrupt */
 ISR(USART_RX_vect) {
 	receivedByte = UDR0;
+	receivedBuffer[writePointer] = receivedByte;
+	writePointer++;
+	if(writePointer > (RECEIVE_BUFFER_SIZE - 1)) {
+		writePointer = 0;
+	}
+	
+	if(bufferItemCount >= RECEIVE_BUFFER_SIZE) {
+		bufferItemCount = RECEIVE_BUFFER_SIZE - 1;
+	} else {
+		bufferItemCount++;
+	}
 }
 
 /* USART Initialisation */
