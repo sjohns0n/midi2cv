@@ -14,9 +14,11 @@ void gateInit(void);
 void gateOn(void);
 void gateOff(void);
 void triggerInit(void);
-void triggerOn();
+void triggerOn(void);
+void triggerOff(void);
 void triggerTimerInit(void);
 
-void outputNote(uint16_t note);
+void outputNote(uint8_t note, int8_t pitchBend);
+void dacZero(void);
 
 #endif /* MIDI2CV_H_ */
